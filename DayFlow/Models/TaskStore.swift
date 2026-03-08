@@ -139,12 +139,17 @@ class TaskStore: ObservableObject {
             if let i = tasks.firstIndex(where: {
                 $0.source == source && $0.sourceId == item.sourceId
             }) {
-                // Keep local scheduledTime / category; update title, completion, due
+                // Update from remote; only keep local scheduledTime if user manually set it
                 var existing = tasks[i]
                 existing.title       = item.title
                 existing.notes       = item.notes ?? existing.notes
                 existing.isCompleted = item.isCompleted
                 existing.dueDate     = item.dueDate ?? existing.dueDate
+                // If remote now has a time and local has none → apply it
+                // If user manually placed task on timeline → keep their placement
+                if existing.scheduledTime == nil, let remoteTime = item.scheduledTime {
+                    existing.scheduledTime = remoteTime
+                }
                 existing.updatedAt   = Date()
                 tasks[i] = existing
             } else {

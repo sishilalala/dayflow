@@ -3,7 +3,8 @@ import EventKit
 
 class RemindersService {
 
-    private let store = EKEventStore()
+    // Use a fresh store each fetch to avoid EventKit cache issues
+    private var store = EKEventStore()
 
     // MARK: - Authorization
 
@@ -27,12 +28,12 @@ class RemindersService {
     // MARK: - Fetch
 
     func fetchReminders() async throws -> [PlannerTask] {
-        // Request access if needed
-        let status = authStatus
-        if status == .notDetermined {
-            _ = try await requestAccess()
-        }
-        guard authStatus == .authorized || authStatus == .fullAccess else {
+        // Fresh store instance to bypass EventKit's in-memory cache
+        store = EKEventStore()
+
+        // Always request access on the new instance (no-op if already granted)
+        let granted = try await requestAccess()
+        guard granted else {
             throw RemindersError.accessDenied
         }
 
@@ -49,16 +50,26 @@ class RemindersService {
                     .filter { !$0.isCompleted }
                     .map { r in
                         var dueDate: Date? = nil
+                        var scheduledTime: Date? = nil
+
                         if let comps = r.dueDateComponents {
-                            dueDate = Calendar.current.date(from: comps)
+                            let date = Calendar.current.date(from: comps)
+                            dueDate = date
+                            // If reminder has a specific hour set → place on timeline
+                            // If date-only (no hour) → goes to Inbox
+                            if comps.hour != nil {
+                                scheduledTime = date
+                            }
                         }
+
                         return PlannerTask(
-                            title:     r.title ?? "Untitled",
-                            notes:     r.notes,
-                            source:    .reminders,
-                            sourceId:  r.calendarItemIdentifier,
-                            category:  .personal,
-                            dueDate:   dueDate
+                            title:         r.title ?? "Untitled",
+                            notes:         r.notes,
+                            scheduledTime: scheduledTime,
+                            source:        .reminders,
+                            sourceId:      r.calendarItemIdentifier,
+                            category:      .personal,
+                            dueDate:       dueDate
                         )
                     }
                 cont.resume(returning: tasks)
